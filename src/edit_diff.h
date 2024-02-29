@@ -4,27 +4,23 @@
  * @brief header for routines for sysrepo edit and diff data tree handling
  *
  * @copyright
- * Copyright 2018 Deutsche Telekom AG.
- * Copyright 2018 - 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2021 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2021 CESNET, z.s.p.o.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *     https://opensource.org/licenses/BSD-3-Clause
  */
+
 #ifndef _EDIT_DIFF_H
 #define _EDIT_DIFF_H
 
 #include <libyang/libyang.h>
 
-#include "common.h"
+#include "common_types.h"
+#include "sysrepo_types.h"
 
 /**
  * @brief All edit operations.
@@ -35,6 +31,7 @@ enum edit_op {
     EDIT_CONTINUE = 0,
     EDIT_MOVE,
     EDIT_AUTO_REMOVE,
+    EDIT_DFLT_CHANGE,
 
     /* sysrepo-specific */
     EDIT_ETHER,
@@ -50,13 +47,49 @@ enum edit_op {
 };
 
 /**
- * @brief Set an operation (attribute) for an edit node.
+ * @brief Callback for libyang diff apply.
+ *
+ * @param[in] diff_node Diff node.
+ * @param[in] data_node Matching node in data.
+ * @param[in] cb_data Unused callback data.
+ * @return LY_ERR value.
+ */
+LY_ERR sr_lyd_diff_apply_cb(const struct lyd_node *diff_node, struct lyd_node *data_node, void *cb_data);
+
+/**
+ * @brief Transform edit into best-effort diff.
+ *
+ * @param[in] edit Edit to transform.
+ * @param[out] diff Created diff.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_edit2diff(const struct lyd_node *edit, struct lyd_node **diff);
+
+/**
+ * @brief Return string name of an operation.
+ *
+ * @param[in] op Operation.
+ * @return String operation name.
+ */
+const char *sr_edit_op2str(enum edit_op op);
+
+/**
+ * @brief Set an operation (attribute) for an edit node. They are defined in sysrepo and ietf-netconf module.
  *
  * @param[in] edit Node to modify.
  * @param[in] op Operation to set.
  * @return err_info, NULL on success.
  */
 sr_error_info_t *sr_edit_set_oper(struct lyd_node *edit, const char *op);
+
+/**
+ * @brief Set an operation (attribute) for a diff node. They are defined in internal libyang yang module.
+ *
+ * @param[in] diff Node to modify.
+ * @param[in] op Operation to set.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_diff_set_oper(struct lyd_node *diff, const char *op);
 
 /**
  * @brief Find operation of an edit node.
@@ -66,16 +99,7 @@ sr_error_info_t *sr_edit_set_oper(struct lyd_node *edit, const char *op);
  * @param[out] own_oper Whether the operation is in the node or in some of its parents.
  * @return Edit operation for the node.
  */
-enum edit_op sr_edit_find_oper(const struct lyd_node *edit, int recursive, int *own_oper);
-
-/**
- * @brief Delete an attribute from an edit node. Only internal (from ietf-netconf or sysrepo modules)
- * ones are considered.
- *
- * @param[in] edit Node to modify.
- * @param[in] name Name of the attribute.
- */
-void sr_edit_del_attr(struct lyd_node *edit, const char *name);
+enum edit_op sr_edit_diff_find_oper(const struct lyd_node *edit, int recursive, int *own_oper);
 
 /**
  * @brief Get (inherited) origin of a node.
@@ -84,7 +108,7 @@ void sr_edit_del_attr(struct lyd_node *edit, const char *name);
  * @param[out] origin Found origin.
  * @param[out] origin_own Whether the found origin is owned or inherited.
  */
-void sr_edit_diff_get_origin(const struct lyd_node *node, const char **origin, int *origin_own);
+void sr_edit_diff_get_origin(const struct lyd_node *node, char **origin, int *origin_own);
 
 /**
  * @brief Set origin of a node.
@@ -114,68 +138,22 @@ sr_error_info_t *sr_edit_created_subtree_apply_move(struct lyd_node *match_subtr
  * @param[out] change Optional, set if there were some module changes.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_edit_mod_apply(const struct lyd_node *edit, const struct lys_module *ly_mod, struct lyd_node **data,
-        struct lyd_node **diff, int *change);
+sr_error_info_t *sr_edit_mod_apply(const struct lyd_node *edit, const struct lys_module *ly_mod,
+        struct lyd_node **data, struct lyd_node **diff, int *change);
 
 /**
- * @brief Merge sysrepo diff of a specific module into another diff.
+ * @brief Merge sysrepo edit with a specific module edit data tree.
  *
- * @param[in] src_diff Diff to merge.
- * @param[in] oper_conn Connection pointer of the owner of \p src_diff in case it is an operational diff.
- * Otherwise should be NULL.
- * @param[in] ly_mod Diff module.
- * @param[in,out] diff Diff to merge into.
- * @param[out] change Optional, set if there were some diff changes.
+ * @param[in] edit Edit tree to apply.
+ * @param[in] cid Connection CID of @p edit to set.
+ * @param[in] ly_mod Edit data tree module.
+ * @param[in,out] data Edit data tree to modify.
+ * @param[in,out] diff Optionally create the diff of the original edit and the new one (or merge into diff).
+ * @param[out] change Optional, set if there were some module changes.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_diff_mod_merge(const struct lyd_node *src_diff, void *oper_conn, const struct lys_module *ly_mod,
-        struct lyd_node **diff, int *change);
-
-/**
- * @brief Apply sysrepo diff on a specific module data tree.
- *
- * @param[in] diff Diff tree to apply.
- * @param[in] ly_mod Data tree module.
- * @param[in] with_origin Whether to copy origin from diff to the data tree.
- * @param[in,out] data Data tree to modify.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_diff_mod_apply(const struct lyd_node *diff, const struct lys_module *ly_mod, int with_origin,
-        struct lyd_node **data);
-
-/**
- * @brief Update sysrepo diff on a specific module data tree.
- * Meaning remove diff parts that cannot be applied.
- *
- * @param[in,out] diff Diff to update.
- * @param[in] ly_mod Data tree module.
- * @param[in] mod_data Data tree to use.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_diff_mod_update(struct lyd_node **diff, const struct lys_module *ly_mod, const struct lyd_node *mod_data);
-
-/**
- * @brief Merge libyang validation diff into sysrepo diff.
- *
- * @param[in,out] diff Existing sysrepo diff.
- * @param[in] type Validation diff change type.
- * @param[in] first Validation diff first item.
- * @param[in] second Validation diff second item.
- * @param[in] ly_ctx libyang context.
- * @param[out] change Set if any data change occured (it could be just dlft flag change).
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_ly_val_diff_merge(struct lyd_node **diff, LYD_DIFFTYPE type, struct lyd_node *first,
-        struct lyd_node *second, struct ly_ctx *ly_ctx, int *change);
-
-/**
- * @brief Transform libyang diff into sysrepo diff.
- *
- * @param[in] ly_diff libyang diff.
- * @param[out] diff_p sysrepo diff.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_diff_ly2sr(struct lyd_difflist *ly_diff, struct lyd_node **diff_p);
+sr_error_info_t *sr_edit_mod_merge(const struct lyd_node *edit, uint32_t cid, const struct lys_module *ly_mod,
+        struct lyd_node **data, struct lyd_node **diff, int *change);
 
 /**
  * @brief Add change into sysrepo edit.
@@ -188,7 +166,7 @@ sr_error_info_t *sr_diff_ly2sr(struct lyd_difflist *ly_diff, struct lyd_node **d
  * @param[in] position Optional position of the change node.
  * @param[in] keys Optional relative list instance keys predicate for move change.
  * @param[in] val Optional relative leaf-list value for move change.
- * @param[in] origin Origin of the value, used only for ::SR_DS_OPERATIONAL.
+ * @param[in] origin Origin of the value, used only for ::SR_DS_OPERATIONAL. Must be prefixed (JSON format).
  * @param[in] isolate Whether to create the new operation separately (isolated) from the others.
  * @return err_info, NULL on success.
  */
@@ -208,22 +186,14 @@ sr_error_info_t *sr_edit_add(sr_session_ctx_t *session, const char *xpath, const
 sr_error_info_t *sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, sr_change_oper_t *op);
 
 /**
- * @brief Reverse diff changes from change event for abort event.
+ * @brief Remove stored edit nodes that belong to a connection and that optionally match an xpath.
  *
- * @param[in] diff Original diff.
- * @param[out] reverse_diff Reversed diff.
+ * @param[in,out] edit Edit to remove from.
+ * @param[in] cid Connection ID of the deleted connection.
+ * @param[in] xpath XPath selecting nodes to consider for deletion, NULL for all the nodes.
+ * @param[out] change_edit Optional change edit created for subscribers based on the changes made in oper edit.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_diff_reverse(const struct lyd_node *diff, struct lyd_node **reverse_diff);
-
-/**
- * @brief Remove all stored diff nodes that belong to a connection that is being deleted.
- *
- * @param[in,out] diff Diff to remove from.
- * @param[in] conn Deleted connection.
- * @param[in] pid PID of the process of the deleted connection.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_diff_del_conn(struct lyd_node **diff, sr_conn_ctx_t *conn, pid_t pid);
+sr_error_info_t *sr_edit_oper_del(struct lyd_node **edit, sr_cid_t cid, const char *xpath, struct lyd_node **change_edit);
 
 #endif

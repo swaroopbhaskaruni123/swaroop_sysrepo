@@ -4,7 +4,7 @@
  * @brief example of an application handling changes
  *
  * @copyright
- * Copyright (c) 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2019 - 2022 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -12,17 +12,17 @@
  *
  *     https://opensource.org/licenses/BSD-3-Clause
  */
-#define _QNX_SOURCE /* sleep */
+
+#define _QNX_SOURCE /* sleep() */
 #define _GNU_SOURCE
 
+#include <inttypes.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <signal.h>
-#include <inttypes.h>
+#include <unistd.h>
 
-#include "compat.h"
 #include "sysrepo.h"
 
 volatile int exit_application = 0;
@@ -117,7 +117,7 @@ print_val(const sr_val_t *value)
 static void
 print_change(sr_change_oper_t op, sr_val_t *old_val, sr_val_t *new_val)
 {
-    switch(op) {
+    switch (op) {
     case SR_OP_CREATED:
         printf("CREATED: ");
         print_val(new_val);
@@ -133,12 +133,19 @@ print_change(sr_change_oper_t op, sr_val_t *old_val, sr_val_t *new_val)
         print_val(new_val);
         break;
     case SR_OP_MOVED:
-        printf("MOVED: %s\n", new_val->xpath);
+        printf("MOVED: ");
+        print_val(new_val);
+        if (old_val) {
+            printf(" after ");
+            print_val(old_val);
+        } else {
+            printf(" to the beginning\n");
+        }
         break;
     }
 }
 
-static void
+static int
 print_current_config(sr_session_ctx_t *session, const char *module_name)
 {
     sr_val_t *values = NULL;
@@ -146,18 +153,21 @@ print_current_config(sr_session_ctx_t *session, const char *module_name)
     int rc = SR_ERR_OK;
     char *xpath;
 
-    asprintf(&xpath, "/%s:*//.", module_name);
-
+    if (asprintf(&xpath, "/%s:*//.", module_name) == -1) {
+        return SR_ERR_NO_MEMORY;
+    }
     rc = sr_get_items(session, xpath, 0, 0, &values, &count);
     free(xpath);
     if (rc != SR_ERR_OK) {
-        return;
+        return rc;
     }
 
-    for (size_t i = 0; i < count; i++){
+    for (size_t i = 0; i < count; i++) {
         print_val(&values[i]);
     }
     sr_free_values(values, count);
+
+    return rc;
 }
 
 const char *
@@ -175,22 +185,28 @@ ev_to_str(sr_event_t ev)
 }
 
 static int
-module_change_cb(sr_session_ctx_t *session, const char *module_name, const char *xpath, sr_event_t event,
+module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
         uint32_t request_id, void *private_data)
 {
     sr_change_iter_t *it = NULL;
     int rc = SR_ERR_OK;
+    char path[512];
     sr_change_oper_t oper;
     sr_val_t *old_value = NULL;
     sr_val_t *new_value = NULL;
 
-    (void)xpath;
+    (void)sub_id;
     (void)request_id;
     (void)private_data;
 
     printf("\n\n ========== EVENT %s CHANGES: ====================================\n\n", ev_to_str(event));
 
-    rc = sr_get_changes_iter(session, "//." , &it);
+    if (xpath) {
+        sprintf(path, "%s//.", xpath);
+    } else {
+        sprintf(path, "/%s:*//.", module_name);
+    }
+    rc = sr_get_changes_iter(session, path, &it);
     if (rc != SR_ERR_OK) {
         goto cleanup;
     }
@@ -205,7 +221,9 @@ module_change_cb(sr_session_ctx_t *session, const char *module_name, const char 
 
     if (event == SR_EV_DONE) {
         printf("\n\n ========== CONFIG HAS CHANGED, CURRENT RUNNING CONFIG: ==========\n\n");
-        print_current_config(session, module_name);
+        if (print_current_config(session, module_name) != SR_ERR_OK) {
+            goto cleanup;
+        }
     }
 
 cleanup:
@@ -221,6 +239,41 @@ sigint_handler(int signum)
     exit_application = 1;
 }
 
+static const char *
+ds2str(sr_datastore_t ds)
+{
+    switch (ds) {
+    case SR_DS_RUNNING:
+        return "running";
+    case SR_DS_OPERATIONAL:
+        return "operational";
+    case SR_DS_STARTUP:
+        return "startup";
+    case SR_DS_CANDIDATE:
+        return "candidate";
+    default:
+        return NULL;
+    }
+}
+
+static int
+str2ds(const char *str, sr_datastore_t *ds)
+{
+    if (!strcmp(str, "running")) {
+        *ds = SR_DS_RUNNING;
+    } else if (!strcmp(str, "operational")) {
+        *ds = SR_DS_OPERATIONAL;
+    } else if (!strcmp(str, "startup")) {
+        *ds = SR_DS_STARTUP;
+    } else if (!strcmp(str, "candidate")) {
+        *ds = SR_DS_CANDIDATE;
+    } else {
+        return 1;
+    }
+
+    return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -229,17 +282,27 @@ main(int argc, char **argv)
     sr_subscription_ctx_t *subscription = NULL;
     int rc = SR_ERR_OK;
     const char *mod_name, *xpath = NULL;
+    sr_datastore_t ds = SR_DS_RUNNING;
 
-    if ((argc < 2) || (argc > 3)) {
-        printf("%s <module-to-subscribe> [<xpath-to-subscribe>]\n", argv[0]);
+    if ((argc < 2) || (argc > 4)) {
+        printf("%s <module-to-subscribe> [<xpath-to-subscribe>] [startup/running/operational/candidate]\n", argv[0]);
         return EXIT_FAILURE;
     }
     mod_name = argv[1];
-    if (argc == 3) {
-        xpath = argv[2];
+    if (argc > 2) {
+        if (str2ds(argv[2], &ds)) {
+            /* 2nd arg xpath */
+            xpath = argv[2];
+        }
+    }
+    if (argc > 3) {
+        if (str2ds(argv[3], &ds)) {
+            printf("Invalid datastore %s\n", argv[3]);
+            return EXIT_FAILURE;
+        }
     }
 
-    printf("Application will watch for changes in \"%s\".\n", xpath ? xpath : mod_name);
+    printf("Application will watch for \"%s\" changes in \"%s\" datastore.\n", xpath ? xpath : mod_name, ds2str(ds));
 
     /* turn logging on */
     sr_log_stderr(SR_LL_WRN);
@@ -251,14 +314,16 @@ main(int argc, char **argv)
     }
 
     /* start session */
-    rc = sr_session_start(connection, SR_DS_RUNNING, &session);
+    rc = sr_session_start(connection, ds, &session);
     if (rc != SR_ERR_OK) {
         goto cleanup;
     }
 
     /* read current config */
     printf("\n ========== READING RUNNING CONFIG: ==========\n\n");
-    print_current_config(session, mod_name);
+    if (print_current_config(session, mod_name) != SR_ERR_OK) {
+        goto cleanup;
+    }
 
     /* subscribe for changes in running config */
     rc = sr_module_change_subscribe(session, mod_name, xpath, module_change_cb, NULL, 0, 0, &subscription);
@@ -281,4 +346,3 @@ cleanup:
     sr_disconnect(connection);
     return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

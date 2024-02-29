@@ -14,12 +14,12 @@
  */
 #define _GNU_SOURCE
 
+#include <inttypes.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <signal.h>
-#include <inttypes.h>
+#include <unistd.h>
 
 #include <libyang/libyang.h>
 
@@ -31,8 +31,8 @@ main(int argc, char **argv)
     sr_conn_ctx_t *connection = NULL;
     sr_session_ctx_t *session = NULL;
     int rc = SR_ERR_OK;
-    struct lyd_node *notif = NULL;
-    const struct ly_ctx *ctx;
+    struct lyd_node *tree = NULL, *notif;
+    const struct ly_ctx *ctx = NULL;
     const char *path, *node_path = NULL, *node_val;
 
     if ((argc < 2) || (argc > 4) || (argc == 3)) {
@@ -55,7 +55,7 @@ main(int argc, char **argv)
     if (rc != SR_ERR_OK) {
         goto cleanup;
     }
-    ctx = sr_get_context(connection);
+    ctx = sr_acquire_context(connection);
 
     /* start session */
     rc = sr_session_start(connection, SR_DS_RUNNING, &session);
@@ -64,29 +64,31 @@ main(int argc, char **argv)
     }
 
     /* create the notification */
-    notif = lyd_new_path(NULL, ctx, path, NULL, 0, 0);
-    if (!notif) {
-        printf("Creating notification \"%s\" failed.\n", path);
+    if (lyd_new_path2(NULL, ctx, path, NULL, 0, 0, 0, &tree, &notif)) {
+        printf("Creating notification \"%s\" failed (%s).\n", path, ly_last_errmsg());
         goto cleanup;
     }
 
     /* add the input value */
     if (node_path) {
-        if (!lyd_new_path(notif, NULL, node_path, (void *)node_val, 0, 0)) {
-            printf("Creating value \"%s\" failed.\n", node_path);
+        if (lyd_new_path(notif, NULL, node_path, node_val, 0, NULL)) {
+            printf("Creating value \"%s\" failed (%s).\n", node_path, ly_last_errmsg());
             goto cleanup;
         }
     }
 
     /* send the notification */
-    rc = sr_event_notif_send_tree(session, notif);
+    rc = sr_notif_send_tree(session, notif, 0, 0);
     if (rc != SR_ERR_OK) {
+        printf("Failed to send the notification.\n");
         goto cleanup;
     }
 
 cleanup:
-    lyd_free_withsiblings(notif);
+    lyd_free_tree(tree);
+    if (ctx) {
+        sr_release_context(connection);
+    }
     sr_disconnect(connection);
     return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

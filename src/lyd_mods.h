@@ -4,190 +4,102 @@
  * @brief header for sysrepo module data routines
  *
  * @copyright
- * Copyright 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2023 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2023 CESNET, z.s.p.o.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *     https://opensource.org/licenses/BSD-3-Clause
  */
+
 #ifndef _LYD_MODS_H
 #define _LYD_MODS_H
 
 #include <libyang/libyang.h>
 
 #include "common.h"
-
-/**
- * @brief Check whether sysrepo module data file exists.
- *
- * @param[out] exists Whether the file exists.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_exists(int *exists);
-
-/**
- * @brief Store (print) sysrepo module data.
- *
- * @param[in,out] sr_mods Data to store, are validated so could (in theory) be modified.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_print(struct lyd_node **sr_mods);
-
-/**
- * @brief Create default sysrepo module data. All libyang internal implemented modules
- * are installed into sysrepo. Sysrepo internal modules ietf-netconf, ietf-netconf-with-defaults,
- * and ietf-netconf-notifications are also installed.
- *
- * @param[in] ly_ctx Context to use for creating the data.
- * @param[out] sr_mods_p Created default sysrepo module data.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_create(struct ly_ctx *ly_ctx, struct lyd_node **sr_mods_p);
+#include "shm_types.h"
+#include "sysrepo_types.h"
 
 /**
  * @brief Parse internal module data.
  *
- * @param[in] ly_ctx Context to use for parsing the data.
+ * @param[in] ly_ctx Context to use for parsing SR data.
+ * @param[in] conn Connection to use for DS handles.
+ * @param[in,out] initialized If set, allow @p ly_ctx to be initialized with the internal modules, if not already.
  * @param[out] sr_mods_p Sysrepo module data tree.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_parse(struct ly_ctx *ly_ctx, struct lyd_node **sr_mods_p);
+sr_error_info_t *sr_lydmods_parse(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn, int *initialized,
+        struct lyd_node **sr_mods_p);
 
 /**
- * @brief Load modules from sysrepo module data into context.
+ * @brief Add modules to SR internal module data.
  *
- * @param[in] sr_mods Sysrepo module data.
- * @param[in] ly_ctx Context to load into.
- * @param[in] removed Whether to load removed modules.
- * @param[in] updated Whether to load updated modules.
- * @param[out] change Whether there were any removed or updated modules, if @p removed or @p updated was set.
- * @return error_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_ctx_load_modules(const struct lyd_node *sr_mods, struct ly_ctx *ly_ctx, int removed,
-        int updated, int *change);
-
-/**
- * @brief Apply all scheduled changes in sysrepo module data.
- *
- * @param[in,out] sr_mods Sysrepo modules data tree.
- * @param[in,out] new_ctx Initalized context with no SR modules loaded. On return all SR modules are loaded
- * with all the changes (if any) applied.
- * @param[out] change Whether sysrepo module data were changed.
- * @param[out] fail Whether some changes in @p new_ctx are not valid. In that case this context
- * is not usable and needs to be created anew.
+ * @param[in] ly_ctx Context to use for parsing SR data.
+ * @param[in] conn Connection to use for DS handles.
+ * @param[in,out] new_mods Array of new modules that were added, may be updated.
+ * @param[in,out] new_mod_count Count of @p new_mods.
+ * @param[out] sr_mods SR internal module data.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_sched_apply(struct lyd_node *sr_mods, struct ly_ctx *new_ctx, int *change, int *fail);
+sr_error_info_t *sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
+        sr_int_install_mod_t **new_mods, uint32_t *new_mod_count, struct lyd_node **sr_mods);
 
 /**
- * @brief Schedule module installation to sysrepo module data.
+ * @brief Remove a module from SR internal module data.
  *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] ly_mod Module that is scheduled to be installed.
- * @param[in] features Array of enabled features.
- * @param[in] feat_count Number of enabled features.
+ * @param[in] ly_ctx Context to use for parsing SR data.
+ * @param[in] new_ctx Context with the module removed.
+ * @param[in] mod_set Set of all the removed modules.
+ * @param[in] conn Connection to use for DS handles.
+ * @param[out] sr_del_mods Deleted modules from @p sr_mods.
+ * @param[out] sr_mods SR internal module data.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_deferred_add_module(struct ly_ctx *ly_ctx, const struct lys_module *ly_mod, const char **features,
-        int feat_count);
+sr_error_info_t *sr_lydmods_change_del_module(const struct ly_ctx *ly_ctx, const struct ly_ctx *new_ctx,
+        const struct ly_set *mod_set, sr_conn_ctx_t *conn, struct lyd_node **sr_del_mods, struct lyd_node **sr_mods);
 
 /**
- * @brief Unschedule module installation from sysrepo module data.
+ * @brief Update modules in SR internal module data.
  *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] module_name Module name to unschedule.
+ * @param[in] ly_ctx Context to use for parsing SR data.
+ * @param[in] upd_mod_set Set with all the new updated modules.
+ * @param[in] conn Connection to use for DS handles.
+ * @param[out] sr_mods SR internal module data.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_unsched_add_module(struct ly_ctx *ly_ctx, const char *module_name);
+sr_error_info_t *sr_lydmods_change_upd_modules(const struct ly_ctx *ly_ctx, const struct ly_set *upd_mod_set,
+        sr_conn_ctx_t *conn, struct lyd_node **sr_mods);
 
 /**
- * @brief Load an installed module from sysrepo module data into a context with any other installed modules.
+ * @brief Change a feature (enable/disable) of a module in SR internal module data.
  *
- * @param[in] sr_mods Sysrepo modules data tree.
- * @param[in] ly_ctx Context to parse the module into.
- * @param[in] module_name Name of the module to find.
- * @param[out] ly_mod Parsed module.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_ctx_load_installed_module_all(const struct lyd_node *sr_mods, struct ly_ctx *ly_ctx,
-        const char *module_name, const struct lys_module **ly_mod);
-
-/**
- * @brief Add startup data for a scheduled module to be installed. Replaces any previous data.
- *
- * @param[in] sr_mods Sysrepo modules sata tree.
- * @param[in] module_name Name of the scheduled installed module.
- * @param[in] data Data to set. They must have only nodes from the module.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_deferred_add_module_data(struct lyd_node *sr_mods, const char *module_name,
-        const struct lyd_node *data);
-
-/**
- * @brief Schedule module deletion to sysrepo module data.
- *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] mod_name Module name to delete.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_deferred_del_module(struct ly_ctx *ly_ctx, const char *mod_name);
-
-/**
- * @brief Unschedule module deletion from sysrepo module data.
- *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] ly_mod Module that is scheduled to be deleted.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_unsched_del_module_with_imps(struct ly_ctx *ly_ctx, const struct lys_module *ly_mod);
-
-/**
- * @brief Schedule module update to sysrepo module data.
- *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] ly_upd_mod Update module.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_deferred_upd_module(struct ly_ctx *ly_ctx, const struct lys_module *ly_upd_mod);
-
-/**
- * @brief Unschedule module update from sysrepo module data.
- *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] mod_name Module name to be updated.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_lydmods_unsched_upd_module(struct ly_ctx *ly_ctx, const char *mod_name);
-
-/**
- * @brief Schedule a feature change (enable/disable) into sysrepo module data.
- *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] ly_mod Module with the feature.
+ * @param[in] ly_ctx Context to use for parsing SR data.
+ * @param[in] old_mod Module with the previous (current) state of features.
+ * @param[in] new_mod Module with the features updated.
  * @param[in] feat_name Feature name.
- * @param[in] to_enable Whether the feature should be enabled or disabled.
- * @param[in] is_enabled Whether the feature is currently enabled or disabled.
+ * @param[in] enable Whether the feature was enabled or disabled.
+ * @param[in] conn Connection to use for DS handles.
+ * @param[out] sr_mods SR internal module data.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_deferred_change_feature(struct ly_ctx *ly_ctx, const struct lys_module *ly_mod,
-        const char *feat_name, int to_enable, int is_enabled);
+sr_error_info_t *sr_lydmods_change_chng_feature(const struct ly_ctx *ly_ctx, const struct lys_module *old_mod,
+        const struct lys_module *new_mod, const char *feat_name, int enable, sr_conn_ctx_t *conn, struct lyd_node **sr_mods);
 
 /**
- * @brief Update reply support in sysrepo module data.
+ * @brief Change replay support of a module in SR internal module data.
  *
- * @param[in] ly_ctx Context to use for parsing the data.
- * @param[in] mod_name Module to update. NULL to update all the modules.
- * @param[in] replay_support Whether replay should be enabled or disabled.
+ * @param[in] ly_mod Module to update. NULL to update all the modules.
+ * @param[in] enable Whether replay should be enabled or disabled.
+ * @param[in] mod_set Set of all the changed modules.
+ * @param[in] conn Connection to use for NTF handles.
+ * @param[out] sr_mods SR internal module data.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lydmods_update_replay_support(struct ly_ctx *ly_ctx, const char *mod_name, int replay_support);
+sr_error_info_t *sr_lydmods_change_chng_replay_support(const struct lys_module *ly_mod, int enable,
+        struct ly_set *mod_set, sr_conn_ctx_t *conn, struct lyd_node **sr_mods);
 
 #endif

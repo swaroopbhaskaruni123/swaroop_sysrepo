@@ -12,15 +12,16 @@
  *
  *     https://opensource.org/licenses/BSD-3-Clause
  */
-#define _QNX_SOURCE /* sleep */
 
+#define _QNX_SOURCE /* sleep() */
+
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 #include <unistd.h>
 
-#include <sysrepo.h>
 #include <libyang/libyang.h>
+#include <sysrepo.h>
 
 /* no synchronization is used in this example even though most of these
  * variables are shared between 2 threads, but the chances of encountering
@@ -46,6 +47,7 @@ oven_thread(void *arg)
 {
     int rc;
     unsigned int desired_temperature;
+
     (void)arg;
 
     while (oven_tid) {
@@ -57,9 +59,9 @@ oven_thread(void *arg)
             } else {
                 oven_temperature = config_temperature;
                 /* oven reached the desired temperature, create a notification */
-                rc = sr_event_notif_send(sess, "/oven:oven-ready", NULL, 0);
+                rc = sr_notif_send(sess, "/oven:oven-ready", NULL, 0, 0, 0);
                 if (rc != SR_ERR_OK) {
-                    SRP_LOG_ERR("OVEN: Oven-ready notification generation failed: %s.", sr_strerror(rc));
+                    SRPLG_LOG_ERR("oven", "Oven-ready notification generation failed: %s.", sr_strerror(rc));
                 }
             }
         } else if (oven_temperature > config_temperature) {
@@ -72,11 +74,11 @@ oven_thread(void *arg)
             }
         }
 
-        if (insert_food_on_ready && oven_temperature >= config_temperature) {
+        if (insert_food_on_ready && (oven_temperature >= config_temperature)) {
             /* food is inserted once the oven is ready */
             insert_food_on_ready = 0;
             food_inside = 1;
-            SRP_LOG_DBGMSG("OVEN: Food put into the oven.");
+            SRPLG_LOG_DBG("oven", "Food put into the oven.");
         }
     }
 
@@ -84,12 +86,14 @@ oven_thread(void *arg)
 }
 
 static int
-oven_config_change_cb(sr_session_ctx_t *session, const char *module_name, const char *xpath, sr_event_t event,
-        uint32_t request_id, void *private_data)
+oven_config_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
 {
     int rc;
     sr_val_t *val;
     pthread_t tid;
+
+    (void)sub_id;
     (void)module_name;
     (void)xpath;
     (void)event;
@@ -110,13 +114,13 @@ oven_config_change_cb(sr_session_ctx_t *session, const char *module_name, const 
         goto sr_error;
     }
 
-    if (val->data.bool_val && oven_tid == 0) {
+    if (val->data.bool_val && (oven_tid == 0)) {
         /* the oven should be turned on and is not (create the oven thread) */
         rc = pthread_create((pthread_t *)&oven_tid, NULL, oven_thread, NULL);
         if (rc != 0) {
             goto sys_error;
         }
-    } else if (!val->data.bool_val && oven_tid != 0) {
+    } else if (!val->data.bool_val && (oven_tid != 0)) {
         /* the oven should be turned off but is on (stop the oven thread) */
         tid = oven_tid;
         oven_tid = 0;
@@ -133,39 +137,46 @@ oven_config_change_cb(sr_session_ctx_t *session, const char *module_name, const 
     return SR_ERR_OK;
 
 sr_error:
-    SRP_LOG_ERR("OVEN: Oven config change callback failed: %s.", sr_strerror(rc));
+    SRPLG_LOG_ERR("oven", "Oven config change callback failed: %s.", sr_strerror(rc));
     return rc;
 
 sys_error:
     sr_free_val(val);
-    SRP_LOG_ERR("OVEN: Oven config change callback failed: %s.", strerror(rc));
+    SRPLG_LOG_ERR("oven", "Oven config change callback failed: %s.", strerror(rc));
     return SR_ERR_OPERATION_FAILED;
 }
 
 static int
-oven_state_cb(sr_session_ctx_t *session, const char *module_name, const char *path, const char *request_xpath,
-        uint32_t request_id, struct lyd_node **parent, void *private_data)
+oven_state_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *path,
+        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
 {
+    const struct ly_ctx *ly_ctx;
     char str[32];
+
     (void)session;
+    (void)sub_id;
     (void)module_name;
     (void)path;
     (void)request_xpath;
     (void)request_id;
     (void)private_data;
 
+    ly_ctx = sr_acquire_context(sr_session_get_connection(sess));
     sprintf(str, "%u", oven_temperature);
-    *parent = lyd_new_path(NULL, sr_get_context(sr_session_get_connection(sess)), "/oven:oven-state/temperature", str, 0, 0);
-    lyd_new_path(*parent, NULL, "/oven:oven-state/food-inside", food_inside ? "true" : "false", 0, 0);
+    lyd_new_path(NULL, ly_ctx, "/oven:oven-state/temperature", str, 0, parent);
+    lyd_new_path(*parent, NULL, "/oven:oven-state/food-inside", food_inside ? "true" : "false", 0, NULL);
+    sr_release_context(sr_session_get_connection(sess));
 
     return SR_ERR_OK;
 }
 
 static int
-oven_insert_food_cb(sr_session_ctx_t *session, const char *path, const sr_val_t *input, const size_t input_cnt,
-        sr_event_t event, uint32_t request_id, sr_val_t **output, size_t *output_cnt, void *private_data)
+oven_insert_food_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *path, const sr_val_t *input,
+        const size_t input_cnt, sr_event_t event, uint32_t request_id, sr_val_t **output, size_t *output_cnt,
+        void *private_data)
 {
     (void)session;
+    (void)sub_id;
     (void)path;
     (void)input;
     (void)input_cnt;
@@ -176,13 +187,13 @@ oven_insert_food_cb(sr_session_ctx_t *session, const char *path, const sr_val_t 
     (void)private_data;
 
     if (food_inside) {
-        SRP_LOG_ERRMSG("OVEN: Food already in the oven.");
+        SRPLG_LOG_ERR("oven", "Food already in the oven.");
         return SR_ERR_OPERATION_FAILED;
     }
 
     if (strcmp(input[0].data.enum_val, "on-oven-ready") == 0) {
         if (insert_food_on_ready) {
-            SRP_LOG_ERRMSG("OVEN: Food already waiting for the oven to be ready.");
+            SRPLG_LOG_ERR("oven", "Food already waiting for the oven to be ready.");
             return SR_ERR_OPERATION_FAILED;
         }
         insert_food_on_ready = 1;
@@ -191,15 +202,17 @@ oven_insert_food_cb(sr_session_ctx_t *session, const char *path, const sr_val_t 
 
     insert_food_on_ready = 0;
     food_inside = 1;
-    SRP_LOG_DBGMSG("OVEN: Food put into the oven.");
+    SRPLG_LOG_DBG("oven", "Food put into the oven.");
     return SR_ERR_OK;
 }
 
 static int
-oven_remove_food_cb(sr_session_ctx_t *session, const char *path, const sr_val_t *input, const size_t input_cnt,
-        sr_event_t event, uint32_t request_id, sr_val_t **output, size_t *output_cnt, void *private_data)
+oven_remove_food_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *path, const sr_val_t *input,
+        const size_t input_cnt, sr_event_t event, uint32_t request_id, sr_val_t **output, size_t *output_cnt,
+        void *private_data)
 {
     (void)session;
+    (void)sub_id;
     (void)path;
     (void)input;
     (void)input_cnt;
@@ -210,12 +223,12 @@ oven_remove_food_cb(sr_session_ctx_t *session, const char *path, const sr_val_t 
     (void)private_data;
 
     if (!food_inside) {
-        SRP_LOG_ERRMSG("OVEN: Food not in the oven.");
+        SRPLG_LOG_ERR("oven", "Food not in the oven.");
         return SR_ERR_OPERATION_FAILED;
     }
 
     food_inside = 0;
-    SRP_LOG_DBGMSG("OVEN: Food taken out of the oven.");
+    SRPLG_LOG_DBG("oven", "Food taken out of the oven.");
     return SR_ERR_OK;
 }
 
@@ -223,6 +236,7 @@ int
 sr_plugin_init_cb(sr_session_ctx_t *session, void **private_data)
 {
     int rc;
+
     (void)private_data;
 
     /* remember the session of our plugin */
@@ -242,29 +256,29 @@ sr_plugin_init_cb(sr_session_ctx_t *session, void **private_data)
     }
 
     /* subscribe as state data provider for the oven state data */
-    rc = sr_oper_get_items_subscribe(session, "oven", "/oven:oven-state", oven_state_cb, NULL, SR_SUBSCR_CTX_REUSE, &subscription);
+    rc = sr_oper_get_subscribe(session, "oven", "/oven:oven-state", oven_state_cb, NULL, 0, &subscription);
     if (rc != SR_ERR_OK) {
         goto error;
     }
 
     /* subscribe for insert-food RPC calls */
-    rc = sr_rpc_subscribe(session, "/oven:insert-food", oven_insert_food_cb, NULL, 0, SR_SUBSCR_CTX_REUSE, &subscription);
+    rc = sr_rpc_subscribe(session, "/oven:insert-food", oven_insert_food_cb, NULL, 0, 0, &subscription);
     if (rc != SR_ERR_OK) {
         goto error;
     }
 
     /* subscribe for remove-food RPC calls */
-    rc = sr_rpc_subscribe(session, "/oven:remove-food", oven_remove_food_cb, NULL, 0, SR_SUBSCR_CTX_REUSE, &subscription);
+    rc = sr_rpc_subscribe(session, "/oven:remove-food", oven_remove_food_cb, NULL, 0, 0, &subscription);
     if (rc != SR_ERR_OK) {
         goto error;
     }
 
     /* sysrepo/plugins.h provides an interface for logging */
-    SRP_LOG_DBGMSG("OVEN: Oven plugin initialized successfully.");
+    SRPLG_LOG_DBG("oven", "Oven plugin initialized successfully.");
     return SR_ERR_OK;
 
 error:
-    SRP_LOG_ERR("OVEN: Oven plugin initialization failed: %s.", sr_strerror(rc));
+    SRPLG_LOG_ERR("oven", "Oven plugin initialization failed: %s.", sr_strerror(rc));
     sr_unsubscribe(subscription);
     return rc;
 }
@@ -277,5 +291,5 @@ sr_plugin_cleanup_cb(sr_session_ctx_t *session, void *private_data)
 
     /* nothing to cleanup except freeing the subscriptions */
     sr_unsubscribe(subscription);
-    SRP_LOG_DBGMSG("OVEN: Oven plugin cleanup finished.");
+    SRPLG_LOG_DBG("oven", "Oven plugin cleanup finished.");
 }

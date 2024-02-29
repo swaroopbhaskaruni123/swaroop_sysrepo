@@ -4,19 +4,14 @@
  * @brief Functions for simplified manipulation with Sysrepo values.
  *
  * @copyright
- * Copyright 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2021 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2021 CESNET, z.s.p.o.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *     https://opensource.org/licenses/BSD-3-Clause
  */
 
 #ifndef SYSREPO_VALUES_H_
@@ -101,7 +96,7 @@ int sr_val_build_xpath(sr_val_t *value, const char *format, ...);
  * @param [in] type Exact type of the data.
  * @param [in] string_val String value to set.
  */
-int sr_val_set_str_data(sr_val_t *value, sr_type_t type, const char *string_val);
+int sr_val_set_str_data(sr_val_t *value, sr_val_type_t type, const char *string_val);
 
 /**
  * @brief Store data of string type into the Sysrepo value data. The actual data
@@ -111,7 +106,7 @@ int sr_val_set_str_data(sr_val_t *value, sr_type_t type, const char *string_val)
  * @param [in] type Exact type of the data.
  * @param [in] format Format string used to build the data.
  */
-int sr_val_build_str_data(sr_val_t *value, sr_type_t type, const char *format, ...);
+int sr_val_build_str_data(sr_val_t *value, sr_val_type_t type, const char *format, ...);
 
 /**
  * @brief Duplicate value (with or without Sysrepo memory context) into a new
@@ -121,6 +116,16 @@ int sr_val_build_str_data(sr_val_t *value, sr_type_t type, const char *format, .
  * @param [out] value_dup Returned duplicate of the input value.
  */
 int sr_dup_val(const sr_val_t *value, sr_val_t **value_dup);
+
+/**
+ * @brief Check if two ::sr_val_t values are equal.
+ * They are considered unequal if their type, origin, xpath, default flag, or actual value differ.
+ *
+ * @param [in] value1 Sysrepo value to compare
+ * @param [in] value2 Sysrepo value to compare
+ * @return 1 if equal, 0 otherwise
+ */
+int sr_equal_val(const sr_val_t *value1, const sr_val_t *value2);
 
 /**
  * @brief Duplicate values (with or without Sysrepo memory context) into a new

@@ -8,6 +8,10 @@ module test {
         prefix inet;
     }
 
+    import ietf-netconf-acm {
+        prefix nacm;
+    }
+
     leaf test-leaf {
         type uint8;
     }
@@ -64,6 +68,10 @@ module test {
         leaf server {
             type inet:host;
         }
+
+        anyxml anyx;
+
+        anydata anyd;
     }
 
     list l3 {
@@ -79,5 +87,19 @@ module test {
             default 10;
             default 15;
         }
+
+        list l4 {
+            ordered-by user;
+            key "k";
+            leaf k {
+                type string;
+            }
+        }
+    }
+
+    rpc r1;
+
+    rpc r2 {
+        nacm:default-deny-all;
     }
 }

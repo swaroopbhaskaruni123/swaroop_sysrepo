@@ -1,6 +1,11 @@
 # Sysrepo
 
-[![GitHub license](https://img.shields.io/badge/license-Apache%20license%202.0-blue.svg)](https://github.com/sysrepo/sysrepo/blob/master/LICENSE)
+[![BSD license](https://img.shields.io/badge/License-BSD-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![Website](https://img.shields.io/website?down_color=lightgrey&down_message=offline&up_color=blue&up_message=online&url=https%3A%2F%2Fwww.sysrepo.org%2F)](https://www.sysrepo.org/)
+[![Build](https://github.com/sysrepo/sysrepo/workflows/sysrepo%20CI/badge.svg)](https://github.com/sysrepo/sysrepo/actions?query=workflow%3A%22sysrepo+CI%22)
+[![Docs](https://img.shields.io/badge/docs-link-blue)](https://netopeer.liberouter.org/doc/sysrepo/)
+[![Coverity](https://scan.coverity.com/projects/7479/badge.svg)](https://scan.coverity.com/projects/sysrepo-sysrepo)
+[![Codecov](https://codecov.io/gh/sysrepo/sysrepo/branch/master/graph/badge.svg?token=tsZ6WOOMNz)](https://codecov.io/gh/sysrepo/sysrepo)
 
 Sysrepo is a [YANG](http://tools.ietf.org/html/rfc7950)-based configuration and operational state data store for Unix/Linux applications.
 
@@ -18,20 +23,10 @@ This means that when only stable official releases are to be used, either `maste
 If all the latest bugfixes should be applied, `devel` branch is the  one to be used. Note that whenever **a new issue is created**
 and it occurs on the `master` branch, the **first response will likely be** to use `devel` before any further provided support.
 
-## Packages
+## Compatibility Between Versions
 
-We are using openSUSE Build Service to automaticaly prepare binary packages for number of GNU/Linux distros.
-The [sysrepo](https://software.opensuse.org//download.html?project=home%3Aliberouter&package=sysrepo)
-packages are always build from current `master` branch (latest release). If you are interested in any other packages
-(such as *devel* or C++ and Python bindings), you can browse
-[all packages](https://download.opensuse.org/repositories/home:/liberouter/) from our repository.
-
-## Migration from Sysrepo version 0.7.x or older
-
-This Sysrepo is a complete rewrite of these older versions. Latest version of the `0.7` version is found in the `legacy` branch.
-We tried to keep the API as similar as possible but there were some smaller or even bigger changes (mostly for the sake
-of efficiency). All these changes should be mentioned in `CHANGES` text file. It is also best to look at least briefly
-at the documentation where you will find information about major design changes (most importantly, no `sysrepod`).
+When upgrading Sysrepo to a newer major SO version, look into the `compatibility` directory for a summary of changes.
+Each directory describes the changes between the specific SO versions. Be aware that they do not match project versions.
 
 ## Provided Features
 
@@ -46,6 +41,34 @@ at the documentation where you will find information about major design changes 
 * YANG 1.1 support
 * Custom RPC, Event Notifications, YANG 1.1 Actions support
 * Notification store & notification replay
+* Factory Default Datastore support (RFC 8808)
+
+## Packages
+
+Binary RPM or DEB packages of the latest release can be built locally using `apkg`, look into `README` in
+the `distro` directory.
+
+## Security Notes
+
+Sysrepo does not have any master process that could enforce complex access control. So instead, it relies on and
+utilizes standard file system permissions but there are some things to bear in mind.
+
+To prevent any sensitive data from being accessible by unauthorized processes, it is imperative to **always
+set correct permissions and owner** for all YANG modules being installed. The utility `sysrepoctl` can help
+with both displaying all the permissions (`--list`) and modifying them (`--change <module>`) in addition
+to this functionality being available in the API.
+
+Having made certain of this, the default configuration should be suitable for a reasonably secure machine
+that has no malicious running processes. Specifically, it is trivial for such a process to completely break
+sysrepo by writing into shared files that must be accessible for all the processes linked with sysrepo. Also,
+with some reverse engineering, it may even be possible to access data by an unathorized process when they are being
+communicated in these shared files.
+
+In order to avoid all such security issues, there are 2 `cmake` variables `SYSREPO_UMASK` and `SYSREPO_GROUP`
+that should be adjusted. Generally, a new system group should be created and set for `SYSREPO_GROUP` and then
+all outside access frobidden by setting `SYSREPO_UMASK` to `00007`. If then all the users executing sysrepo
+processes belong to this group, none of sysrepo files and no sensitive information should be accessible to
+other users.
 
 ## Requirements
 
@@ -54,12 +77,17 @@ at the documentation where you will find information about major design changes 
 * C compiler (gcc >= 4.8.4, clang >= 3.0, ...)
 * cmake >= 2.8.12
 * [libyang](https://github.com/CESNET/libyang)
+* tar(1)
 
 #### Optional
 
+* pkg-config & libsystemd (to support `sysrepo-plugind` systemd service)
 * doxygen (for generating documentation)
-* cmocka >= 1.0.0 (for tests only, see [Tests](#Tests))
+* cmocka >= 1.0.1 (for tests only, see [Tests](#Tests))
 * valgrind (for enhanced testing)
+* gcov (for code coverage)
+* lcov (for code coverage)
+* genhtml (for code coverage)
 
 ## Building
 
@@ -70,32 +98,60 @@ $ make
 # make install
 ```
 
-### Documentation
+### Plugin development documentation
 
-The library documentation is available online ([docs](https://netopeer.liberouter.org/doc/sysrepo/)),
-or can be generated locally from the source code using Doxygen tool:
-```
-$ make doc
-$ google-chrome ../doc/html/index.html
-```
+Another markdown document aimed at plugin developers is available in [plugin_dev_doc.md](./plugin_dev_doc.md).
+The goal of the document is to provide a single place where a complete overview of information required to
+start developing plugins is available.
+The document describes the basics of Sysrepo plugin development and the technologies required to work with
+Sysrepo like YANG, XPath, NETCONF and others.
 
 ### Useful CMake sysrepo Options
-
-Generate C++ and Python3 bindings:
-```
--DGEN_LANGUAGE_BINDINGS=ON
-```
 
 Set custom repository path:
 ```
 -DREPO_PATH=/opt/sysrepo/my_repository
 ```
 
-Set custom `sysrepo-plugind` plugins path:
+Set custom `sysrepo` DS and NTF plugins path:
 ```
--DPLUGINS_PATH=/opt/sysrepo-plugind/plugins
+-DSR_PLUGINS_PATH=/opt/sysrepo/plugins
 ```
 
+Set custom `sysrepo-plugind` plugins path:
+```
+-DSRPD_PLUGINS_PATH=/opt/sysrepo-plugind/plugins
+```
+
+Set global `umask` for all sysrepo file and directory creation:
+```
+-DSYSREPO_UMASK=00007
+```
+
+Set system group to own all sysrepo-related files:
+```
+-DSYSREPO_GROUP=sysrepo
+```
+
+Set `systemd` system service unit path:
+```
+-DSYSTEMD_UNIT_DIR=/usr/lib/systemd/system
+```
+
+Set [NACM](#NACM) recovery username with unrestricted access:
+```
+-DNACM_RECOVERY_USER=root
+```
+
+Set [NACM](#NACM) configuration data and 'sysrepo-monitoring' default permissions:
+```
+-DNACM_SRMON_DATA_PERM=000
+```
+
+Set `startup` and `factory-default` datastore data for internal modules (such as `ietf-netconf-acm`):
+```
+-DINTERNAL_MODULE_DATA_PATH=/etc/config/factory_default_config.xml
+```
 ### Useful CMake Build Options
 
 #### Changing Compiler
@@ -133,24 +189,17 @@ $ cmake -D CMAKE_BUILD_TYPE:String="Release" ..
 
 #### Code Coverage
 
-To generate statistical information about code coverage by tests, set
-`ENABLE_COVERAGE` option to `ON`:
+Based on the tests run, it is possible to generate code coverage report. But
+it must be enabled and these commands are needed to generate the report:
 ```
-$ cmake -D ENABLE_COVERAGE="ON" ..
-```
-and then the make's `coverage` target should be available to geenrate statistics:
-```
+$ cmake -DENABLE_COVERAGE=ON ..
+$ make
 $ make coverage
 ```
 
-Note that `gcc` compiler is required for this option and additional tools are required:
-* gcov
-* lcov
-* genhtml
-
 ## Usage
 
-All Sysrepo functions are available via the main header:
+All basic Sysrepo functions are available via the main header:
 
 ```C
 #include <sysrepo.h>
@@ -163,9 +212,45 @@ following linker parameters:
 ```
 
 Note, that it may be necessary to call `ldconfig(8)` after library installation and if the
-library was installed into a non-standard path, the path to libyang must be specified to the
+library was installed into a non-standard path, the path to it must be specified to the
 linker. To help with setting all the compiler's options, there is `sysrepo.pc` file for
 `pkg-config(1)` available in the source tree. The file is installed with the library.
+
+## Utils
+
+There are additional utility functions available as part of Sysrepo but their headers need to be
+included manually. They are:
+```C
+#include <sysrepo/error_format.h>
+```
+Implements basic creation and retrieval of well-known Sysrepo errors generated by callbacks. Currently, the
+only supported error format is NETCONF.
+
+```C
+#include <sysrepo/netconf_acm.h>
+```
+NETCONF Access Control Module with configuration data in *ietf-netconf-acm* YANG module is implemented
+as part of *sysrepo*. By default, no users other than the recovery user (default `root`) will be allowed
+to *write* any data but should be granted *read* and *execute* permissions unless the access was modified
+by a NACM extension.
+
+```C
+#include <sysrepo/subscribed_notifications.h>
+```
+This header provides additional functionality to simplify implementing *ietf-subscribed-notifications* and
+*ietf-yang-push* YANG modules. But these modules need to be installed manually and can be found with all
+their imports in `modules/subscribed_notifications`.
+
+```C
+#include <sysrepo/values.h>
+```
+Utility header for working with `sr_val_t` Sysrepo value structures. Note that these are generally
+considered deprecated and *libyang* `struct lyd_node` should be used instead.
+
+```C
+#include <sysrepo/xpath.h>
+```
+More complex handling of XPath expressions that has lots of features at the cost of efficiency.
 
 ### Used run-time enviromental variables
 
@@ -173,13 +258,30 @@ It is possible to change the repository path by setting `SYSREPO_REPOSITORY_PATH
 Also, if `SYSREPO_SHM_PREFIX` is defined, it is used for all SHM files created. This way
 everal *sysrepo* instances can effectively be run simultanously on one machine.
 
+## Factory Default
+
+The `factory-default` datastore contents of a module are automatically populated by the initial data used
+when installing the specific module and **cannot** be changed (unless the module is reinstalled). There is
+an internal subscription to the `/ietf-factory-default:factory-reset` RPC which performs the copying of
+`factory-default` data into all the other datastores. This RPC has a priority 10 so applications are
+able to subscribe to it with higher or lower priority and perform any other tasks required for a device
+to be rest to its factory settings.
+
 ## Examples
 
 See [examples](examples) directory, which contains an example for basic API functions.
 
+## Bindings
+
+There are no bindings for other languages directly in this project but they are
+available separately.
+
+* [Python](https://github.com/sysrepo/sysrepo-python/)
+* [C++](https://github.com/sysrepo/sysrepo-cpp/)
+
 ## Tests
 
-libyang includes several tests built with [cmocka](https://cmocka.org/). The tests
+There are several tests included and built with [cmocka](https://cmocka.org/). The tests
 can be found in `tests` subdirectory and they are designed for checking library
 functionality after code changes.
 
@@ -191,7 +293,7 @@ $ make
 In case of the `Release` mode, the tests are not built by default (it requires
 additional dependency), but they can be enabled via cmake option:
 ```
-$ cmake -DENABLE_BUILD_TESTS=ON ..
+$ cmake -DENABLE_TESTS=ON ..
 ```
 
 Note that if the necessary [cmocka](https://cmocka.org/) headers are not present
@@ -201,4 +303,19 @@ cmake's options.
 Tests can be run by the make's `test` target:
 ```
 $ make test
+```
+
+### Perf
+
+There is a performance measurement tool included that prints information about
+the time required to execute common use-cases of working with large YANG instance data.
+
+To enable this test, use an option and to get representative results, enable Release build type:
+```
+$ cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_PERF_TESTS=ON ..
+```
+and to run the test with seeing its output run:
+```
+$ make
+$ ctest -V -R sr_perf
 ```

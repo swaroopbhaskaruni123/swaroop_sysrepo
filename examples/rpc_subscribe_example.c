@@ -13,14 +13,13 @@
  *     https://opensource.org/licenses/BSD-3-Clause
  */
 #define _GNU_SOURCE
-#define _XOPEN_SOURCE 500
 
+#include <inttypes.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <signal.h>
-#include <inttypes.h>
+#include <unistd.h>
 
 #include <libyang/libyang.h>
 
@@ -116,12 +115,13 @@ print_val(const sr_val_t *value)
 }
 
 static int
-rpc_cb(sr_session_ctx_t *session, const char *path, const sr_val_t *input, const size_t input_cnt,
+rpc_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *path, const sr_val_t *input, const size_t input_cnt,
         sr_event_t event, uint32_t request_id, sr_val_t **output, size_t *output_cnt, void *private_data)
 {
     size_t i;
 
     (void)session;
+    (void)sub_id;
     (void)event;
     (void)request_id;
     (void)private_data;
@@ -133,12 +133,11 @@ rpc_cb(sr_session_ctx_t *session, const char *path, const sr_val_t *input, const
 
     if (!strcmp(path, "/examples:oper")) {
         /* generate some output */
-        *output = malloc(sizeof **output);
+        *output = calloc(1, sizeof **output);
         *output_cnt = 1;
 
         (*output)[0].xpath = strdup("/examples:oper/ret");
         (*output)[0].type = SR_INT64_T;
-        (*output)[0].dflt = 0;
         (*output)[0].data.int64_val = -123456;
     }
 
@@ -206,4 +205,3 @@ cleanup:
     sr_disconnect(connection);
     return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

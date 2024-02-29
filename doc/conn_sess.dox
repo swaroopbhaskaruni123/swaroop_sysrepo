@@ -5,7 +5,7 @@ To start working with Sysrepo, a **connection** must be created first. Generally
 only one connection because there should be no reason to create several although it is allowed and Sysrepo will
 work correctly in both cases. Connection stores the main shared memory mapping and a corresponding _libyang_ **context**
 among other things. This context can also be used in the application for learning about Sysrepo schemas or when
-working with data to save some resources but it can never be modified!
+working with data to save some resources but it can never be directly modified!
 
 Then, an arbitrary number of **sessions** can be created. Most importantly, the [threading model](@ref threads)
 needs to be considered. Other than that there are no inherent restrictions in Sysrepo and
@@ -24,7 +24,7 @@ the output, for example.
 Also, every session has a **unique ID** among all Sysrepo sessions. This is useful when an operation fails because of
 another session (locked module, for instance). In addition, it is possible to learn what session initiated an event
 that is being processed in a subscription callback. In this case there is even an information about the NETCONF
-session (its ID) if the originator application stored it into the Sysrepo session.
+session (its ID) if the originator application [stored it](@ref sr_session_push_orig_data) into the Sysrepo session.
 
 Next, session **user** can be changed to an arbitrary one present on the system. This is useful for applications that serve
 only as an (remote) interface to Sysrepo. However, as this allows for a complete [access control](@ref access_control)

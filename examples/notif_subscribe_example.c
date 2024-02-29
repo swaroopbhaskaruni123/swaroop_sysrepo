@@ -12,15 +12,16 @@
  *
  *     https://opensource.org/licenses/BSD-3-Clause
  */
-#define _QNX_SOURCE /* sleep */
+
+#define _QNX_SOURCE /* sleep() */
 #define _GNU_SOURCE
 
+#include <inttypes.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <signal.h>
-#include <inttypes.h>
+#include <unistd.h>
 
 #include <libyang/libyang.h>
 
@@ -116,13 +117,14 @@ print_val(const sr_val_t *value)
 }
 
 static void
-notif_cb(sr_session_ctx_t *session, const sr_ev_notif_type_t notif_type, const char *path, const sr_val_t *values,
-        const size_t values_cnt, time_t timestamp, void *private_data)
+notif_cb(sr_session_ctx_t *session, const sr_ev_notif_type_t notif_type, uint32_t sub_id, const char *path,
+        const sr_val_t *values, const size_t values_cnt, struct timespec *timestamp, void *private_data)
 {
     size_t i;
 
     (void)session;
     (void)notif_type;
+    (void)sub_id;
     (void)timestamp;
     (void)private_data;
 
@@ -177,7 +179,7 @@ main(int argc, char **argv)
     }
 
     /* subscribe for the notifications */
-    rc = sr_event_notif_subscribe(session, mod_name, xpath, 0, 0, notif_cb, NULL, 0, &subscription);
+    rc = sr_notif_subscribe(session, mod_name, xpath, NULL, NULL, notif_cb, NULL, 0, &subscription);
     if (rc != SR_ERR_OK) {
         goto cleanup;
     }
@@ -197,4 +199,3 @@ cleanup:
     sr_disconnect(connection);
     return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

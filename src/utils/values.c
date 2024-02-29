@@ -4,29 +4,29 @@
  * @brief Functions for simplified manipulation with Sysrepo values.
  *
  * @copyright
- * Copyright 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2021 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2021 CESNET, z.s.p.o.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *     https://opensource.org/licenses/BSD-3-Clause
  */
-#define _POSIX_C_SOURCE 200809L
 
-#include <unistd.h>
+#define _GNU_SOURCE
+
+#include "compat.h"
+#include "values.h"
+
 #include <inttypes.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
-#include "values.h"
 #include "common.h"
+#include "config.h"
+#include "log.h"
 
 /** get the larger item */
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -45,9 +45,11 @@ typedef enum sr_print_type_e {
  */
 typedef struct sr_print_ctx_s {
     sr_print_type_t type;
+
     union {
         int fd;
         FILE *stream;
+
         struct {
             char *buf;
             size_t len;
@@ -60,29 +62,29 @@ typedef struct sr_print_ctx_s {
  * @brief Returns pointer to the string where data of given string type is stored.
  */
 static char **
-sr_val_str_data_ptr(sr_val_t *value, sr_type_t type)
+sr_val_str_data_ptr(sr_val_t *value, sr_val_type_t type)
 {
     switch (type) {
-        case SR_BINARY_T:
-            return &value->data.binary_val;
-            break;
-        case SR_BITS_T:
-            return &value->data.bits_val;
-            break;
-        case SR_ENUM_T:
-            return &value->data.enum_val;
-            break;
-        case SR_IDENTITYREF_T:
-            return &value->data.identityref_val;
-            break;
-        case SR_INSTANCEID_T:
-            return &value->data.instanceid_val;
-            break;
-        case SR_STRING_T:
-            return &value->data.string_val;
-            break;
-        default:
-            return NULL;
+    case SR_BINARY_T:
+        return &value->data.binary_val;
+        break;
+    case SR_BITS_T:
+        return &value->data.bits_val;
+        break;
+    case SR_ENUM_T:
+        return &value->data.enum_val;
+        break;
+    case SR_IDENTITYREF_T:
+        return &value->data.identityref_val;
+        break;
+    case SR_INSTANCEID_T:
+        return &value->data.instanceid_val;
+        break;
+    case SR_STRING_T:
+        return &value->data.string_val;
+        break;
+    default:
+        return NULL;
     }
 }
 
@@ -157,7 +159,7 @@ sr_mem_edit_string(char **string_p, const char *new_val)
 {
     char *new_mem = NULL;
 
-    if (NULL != *string_p && strlen(*string_p) >= strlen(new_val)) {
+    if ((NULL != *string_p) && (strlen(*string_p) >= strlen(new_val))) {
         /* buffer large enough - overwrite */
         strcpy(*string_p, new_val);
         return SR_ERR_OK;
@@ -165,7 +167,7 @@ sr_mem_edit_string(char **string_p, const char *new_val)
 
     new_mem = strdup(new_val);
     if (!new_mem) {
-        return SR_ERR_NOMEM;
+        return SR_ERR_NO_MEMORY;
     }
 
     free(*string_p);
@@ -192,7 +194,7 @@ sr_mem_edit_string_va(char **string_p, const char *format, va_list args)
     len = vsnprintf(NULL, 0, format, args_copy);
     va_end(args_copy);
 
-    if (NULL != *string_p && strlen(*string_p) >= len) {
+    if ((NULL != *string_p) && (strlen(*string_p) >= len)) {
         /* buffer large enough - overwrite */
         vsnprintf(*string_p, len + 1, format, args);
         return SR_ERR_OK;
@@ -200,7 +202,7 @@ sr_mem_edit_string_va(char **string_p, const char *format, va_list args)
 
     new_mem = (char *)calloc(len + 1, sizeof(*new_mem));
     if (!new_mem) {
-        return SR_ERR_NOMEM;
+        return SR_ERR_NO_MEMORY;
     }
 
     vsnprintf(new_mem, len + 1, format, args);
@@ -224,7 +226,7 @@ sr_val_build_xpath(sr_val_t *value, const char *format, ...)
 }
 
 API int
-sr_val_set_str_data(sr_val_t *value, sr_type_t type, const char *string_val)
+sr_val_set_str_data(sr_val_t *value, sr_val_type_t type, const char *string_val)
 {
     char **str_to_edit = NULL;
 
@@ -238,7 +240,7 @@ sr_val_set_str_data(sr_val_t *value, sr_type_t type, const char *string_val)
 }
 
 static int
-sr_val_build_str_data_va(sr_val_t *value, sr_type_t type, const char *format, va_list args)
+sr_val_build_str_data_va(sr_val_t *value, sr_val_type_t type, const char *format, va_list args)
 {
     char **str_to_edit = NULL;
     int rc = SR_ERR_OK;
@@ -255,7 +257,7 @@ sr_val_build_str_data_va(sr_val_t *value, sr_type_t type, const char *format, va
 }
 
 API int
-sr_val_build_str_data(sr_val_t *value, sr_type_t type, const char *format, ...)
+sr_val_build_str_data(sr_val_t *value, sr_val_type_t type, const char *format, ...)
 {
     va_list arg_list;
     int rc = SR_ERR_OK;
@@ -275,40 +277,40 @@ sr_dup_val_data(sr_val_t *dest, const sr_val_t *source)
     dest->dflt = source->dflt;
 
     switch (source->type) {
-        case SR_BINARY_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.binary_val);
-            break;
-        case SR_BITS_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.bits_val);
-            break;
-        case SR_ENUM_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.enum_val);
-            break;
-        case SR_IDENTITYREF_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.identityref_val);
-            break;
-        case SR_INSTANCEID_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.instanceid_val);
-            break;
-        case SR_STRING_T:
-            rc = sr_val_set_str_data(dest, source->type, source->data.string_val);
-            break;
-        case SR_BOOL_T:
-        case SR_DECIMAL64_T:
-        case SR_INT8_T:
-        case SR_INT16_T:
-        case SR_INT32_T:
-        case SR_INT64_T:
-        case SR_UINT8_T:
-        case SR_UINT16_T:
-        case SR_UINT32_T:
-        case SR_UINT64_T:
-            dest->data = source->data;
-            dest->type = source->type;
-            break;
-        default:
-            dest->type = source->type;
-            break;
+    case SR_BINARY_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.binary_val);
+        break;
+    case SR_BITS_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.bits_val);
+        break;
+    case SR_ENUM_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.enum_val);
+        break;
+    case SR_IDENTITYREF_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.identityref_val);
+        break;
+    case SR_INSTANCEID_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.instanceid_val);
+        break;
+    case SR_STRING_T:
+        rc = sr_val_set_str_data(dest, source->type, source->data.string_val);
+        break;
+    case SR_BOOL_T:
+    case SR_DECIMAL64_T:
+    case SR_INT8_T:
+    case SR_INT16_T:
+    case SR_INT32_T:
+    case SR_INT64_T:
+    case SR_UINT8_T:
+    case SR_UINT16_T:
+    case SR_UINT32_T:
+    case SR_UINT64_T:
+        dest->data = source->data;
+        dest->type = source->type;
+        break;
+    default:
+        dest->type = source->type;
+        break;
     }
 
     return rc;
@@ -373,6 +375,80 @@ cleanup:
 }
 
 static int
+sr_cmp_str(const char *c1, const char *c2)
+{
+    if ((c1 != NULL) && (c2 == NULL)) {
+        return -1;
+    } else if ((c1 == NULL) && (c2 != NULL)) {
+        return 1;
+    } else if ((c1 == NULL) && (c2 == NULL)) {
+        return 0;
+    }
+
+    return strcmp(c1, c2);
+}
+
+API int
+sr_equal_val(const sr_val_t *value1, const sr_val_t *value2)
+{
+    if ((value1->type != value2->type) ||
+            (0 != sr_cmp_str(value1->origin, value2->origin)) ||
+            (0 != sr_cmp_str(value1->xpath, value2->xpath)) ||
+            (value1->dflt != value2->dflt)) {
+        return 0;
+    }
+
+    switch (value1->type) {
+    case SR_BINARY_T:
+        return 0 == sr_cmp_str(value1->data.binary_val, value2->data.binary_val);
+    case SR_BITS_T:
+        return 0 == sr_cmp_str(value1->data.bits_val, value2->data.bits_val);
+    case SR_ENUM_T:
+        return 0 == sr_cmp_str(value1->data.enum_val, value2->data.enum_val);
+    case SR_IDENTITYREF_T:
+        return 0 == sr_cmp_str(value1->data.identityref_val, value2->data.identityref_val);
+    case SR_INSTANCEID_T:
+        return 0 == sr_cmp_str(value1->data.instanceid_val, value2->data.instanceid_val);
+    case SR_STRING_T:
+        return 0 == sr_cmp_str(value1->data.string_val, value2->data.string_val);
+    case SR_ANYXML_T:
+        return 0 == sr_cmp_str(value1->data.anyxml_val, value2->data.anyxml_val);
+    case SR_ANYDATA_T:
+        return 0 == sr_cmp_str(value1->data.anydata_val, value2->data.anydata_val);
+    case SR_BOOL_T:
+        return value1->data.bool_val == value2->data.bool_val;
+    case SR_DECIMAL64_T:
+        return value1->data.decimal64_val == value2->data.decimal64_val;
+    case SR_INT8_T:
+        return value1->data.int8_val == value2->data.int8_val;
+    case SR_INT16_T:
+        return value1->data.int16_val == value2->data.int16_val;
+    case SR_INT32_T:
+        return value1->data.int32_val == value2->data.int32_val;
+    case SR_INT64_T:
+        return value1->data.int64_val == value2->data.int64_val;
+    case SR_UINT8_T:
+        return value1->data.uint8_val == value2->data.uint8_val;
+    case SR_UINT16_T:
+        return value1->data.uint16_val == value2->data.uint16_val;
+    case SR_UINT32_T:
+        return value1->data.uint32_val == value2->data.uint32_val;
+    case SR_UINT64_T:
+        return value1->data.uint64_val == value2->data.uint64_val;
+    case SR_UNKNOWN_T:
+    case SR_CONTAINER_T:
+    case SR_CONTAINER_PRESENCE_T:
+    case SR_LIST_T:
+    case SR_LEAF_EMPTY_T:
+    case SR_NOTIFICATION_T:
+        /* No value to compare */
+        break;
+    }
+
+    return 1;
+}
+
+static int
 sr_print(sr_print_ctx_t *print_ctx, const char *format, ...)
 {
     int rc = SR_ERR_OK, count = 0, len = 0;
@@ -383,49 +459,49 @@ sr_print(sr_print_ctx_t *print_ctx, const char *format, ...)
     va_start(va, format);
 
     switch (print_ctx->type) {
-        case SR_PRINT_FD:
-            count = vdprintf(print_ctx->method.fd, format, va);
-            if (count == -1) {
-                rc = SR_ERR_INTERNAL;
+    case SR_PRINT_FD:
+        count = vdprintf(print_ctx->method.fd, format, va);
+        if (count == -1) {
+            rc = SR_ERR_INTERNAL;
+            goto cleanup;
+        }
+        break;
+    case SR_PRINT_STREAM:
+        count = vfprintf(print_ctx->method.stream, format, va);
+        if (count == -1) {
+            rc = SR_ERR_INTERNAL;
+            goto cleanup;
+        }
+        break;
+    case SR_PRINT_MEM:
+        /* print string to a temporary memory buffer */
+        len = vsnprintf(NULL, 0, format, va);
+        str = calloc(len + 1, sizeof *str);
+        if (!str) {
+            rc = SR_ERR_NO_MEMORY;
+            goto cleanup;
+        }
+        va_end(va);     /**< restart va_list */
+        va_start(va, format);
+        count = vsnprintf(str, len + 1, format, va);
+        if (count == -1) {
+            rc = SR_ERR_INTERNAL;
+            goto cleanup;
+        }
+        /* append the string to already printed data */
+        if (print_ctx->method.mem.len + count + 1 > print_ctx->method.mem.size) {
+            new_size = MAX(2 * print_ctx->method.mem.size, print_ctx->method.mem.len + count + 1);
+            aux = realloc(print_ctx->method.mem.buf, new_size * sizeof *aux);
+            if (!aux) {
+                rc = SR_ERR_NO_MEMORY;
                 goto cleanup;
             }
-            break;
-        case SR_PRINT_STREAM:
-            count = vfprintf(print_ctx->method.stream, format, va);
-            if (count == -1) {
-                rc = SR_ERR_INTERNAL;
-                goto cleanup;
-            }
-            break;
-        case SR_PRINT_MEM:
-            /* print string to a temporary memory buffer */
-            len = vsnprintf(NULL, 0, format, va);
-            str = calloc(len+1, sizeof *str);
-            if (!str) {
-                rc = SR_ERR_NOMEM;
-                goto cleanup;
-            }
-            va_end(va); /**< restart va_list */
-            va_start(va, format);
-            count = vsnprintf(str, len+1, format, va);
-            if (count == -1) {
-                rc = SR_ERR_INTERNAL;
-                goto cleanup;
-            }
-            /* append the string to already printed data */
-            if (print_ctx->method.mem.len + count + 1 > print_ctx->method.mem.size) {
-                new_size = MAX(2 * print_ctx->method.mem.size, print_ctx->method.mem.len + count + 1);
-                aux = realloc(print_ctx->method.mem.buf, new_size * sizeof *aux);
-                if (!aux) {
-                    rc = SR_ERR_NOMEM;
-                    goto cleanup;
-                }
-                print_ctx->method.mem.buf = aux;
-                print_ctx->method.mem.size = new_size;
-            }
-            strcpy(print_ctx->method.mem.buf + print_ctx->method.mem.len, str);
-            print_ctx->method.mem.len += count;
-            break;
+            print_ctx->method.mem.buf = aux;
+            print_ctx->method.mem.size = new_size;
+        }
+        strcpy(print_ctx->method.mem.buf + print_ctx->method.mem.len, str);
+        print_ctx->method.mem.len += count;
+        break;
     }
 
 cleanup:
@@ -531,7 +607,7 @@ sr_print_val_ctx(sr_print_ctx_t *print_ctx, const sr_val_t *value)
 API int
 sr_print_val(const sr_val_t *value)
 {
-    sr_print_ctx_t print_ctx = { 0, };
+    sr_print_ctx_t print_ctx = {0, };
 
     print_ctx.type = SR_PRINT_STREAM;
     print_ctx.method.stream = stdout;
@@ -542,7 +618,7 @@ sr_print_val(const sr_val_t *value)
 API int
 sr_print_val_fd(int fd, const sr_val_t *value)
 {
-    sr_print_ctx_t print_ctx = { 0, };
+    sr_print_ctx_t print_ctx = {0, };
 
     print_ctx.type = SR_PRINT_FD;
     print_ctx.method.fd = fd;
@@ -553,7 +629,7 @@ sr_print_val_fd(int fd, const sr_val_t *value)
 API int
 sr_print_val_stream(FILE *stream, const sr_val_t *value)
 {
-    sr_print_ctx_t print_ctx = { 0, };
+    sr_print_ctx_t print_ctx = {0, };
 
     print_ctx.type = SR_PRINT_STREAM;
     print_ctx.method.stream = stream;
@@ -565,7 +641,7 @@ API int
 sr_print_val_mem(char **mem_p, const sr_val_t *value)
 {
     int rc = SR_ERR_OK;
-    sr_print_ctx_t print_ctx = { 0, };
+    sr_print_ctx_t print_ctx = {0, };
 
     print_ctx.type = SR_PRINT_MEM;
     print_ctx.method.mem.buf = NULL;
@@ -597,7 +673,7 @@ sr_vasprintf(char **strp, const char *fmt, va_list ap)
     /* allocate memory for the string */
     buffer = calloc(size, sizeof *buffer);
     if (!buffer) {
-        return SR_ERR_NOMEM;
+        return SR_ERR_NO_MEMORY;
     }
 
     /* print */
@@ -690,19 +766,19 @@ sr_val_to_str(const sr_val_t *value)
             }
             break;
         case SR_INT8_T:
-            sr_asprintf(&out, "%"PRId8, value->data.int8_val);
+            sr_asprintf(&out, "%" PRId8, value->data.int8_val);
             break;
         case SR_INT16_T:
-            sr_asprintf(&out, "%"PRId16, value->data.int16_val);
+            sr_asprintf(&out, "%" PRId16, value->data.int16_val);
             break;
         case SR_INT32_T:
-            sr_asprintf(&out, "%"PRId32, value->data.int32_val);
+            sr_asprintf(&out, "%" PRId32, value->data.int32_val);
             break;
         case SR_INT64_T:
-            sr_asprintf(&out, "%"PRId64, value->data.int64_val);
+            sr_asprintf(&out, "%" PRId64, value->data.int64_val);
             break;
         case SR_STRING_T:
-            if (NULL != value->data.string_val){
+            if (NULL != value->data.string_val) {
                 out = strdup(value->data.string_val);
                 if (!out) {
                     goto cleanup;
@@ -710,19 +786,19 @@ sr_val_to_str(const sr_val_t *value)
             }
             break;
         case SR_UINT8_T:
-            sr_asprintf(&out, "%"PRIu8, value->data.uint8_val);
+            sr_asprintf(&out, "%" PRIu8, value->data.uint8_val);
             break;
         case SR_UINT16_T:
-            sr_asprintf(&out, "%"PRIu16, value->data.uint16_val);
+            sr_asprintf(&out, "%" PRIu16, value->data.uint16_val);
             break;
         case SR_UINT32_T:
-            sr_asprintf(&out, "%"PRIu32, value->data.uint32_val);
+            sr_asprintf(&out, "%" PRIu32, value->data.uint32_val);
             break;
         case SR_UINT64_T:
-            sr_asprintf(&out, "%"PRIu64, value->data.uint64_val);
+            sr_asprintf(&out, "%" PRIu64, value->data.uint64_val);
             break;
         case SR_ANYXML_T:
-            if (NULL != value->data.anyxml_val){
+            if (NULL != value->data.anyxml_val) {
                 out = strdup(value->data.anyxml_val);
                 if (!out) {
                     goto cleanup;
@@ -730,7 +806,7 @@ sr_val_to_str(const sr_val_t *value)
             }
             break;
         case SR_ANYDATA_T:
-            if (NULL != value->data.anydata_val){
+            if (NULL != value->data.anydata_val) {
                 out = strdup(value->data.anydata_val);
                 if (!out) {
                     goto cleanup;
@@ -793,16 +869,16 @@ sr_val_to_buff(const sr_val_t *value, char buffer[], size_t size)
         }
         break;
     case SR_INT8_T:
-        len = snprintf(buffer, size, "%"PRId8, value->data.int8_val);
+        len = snprintf(buffer, size, "%" PRId8, value->data.int8_val);
         break;
     case SR_INT16_T:
-        len = snprintf(buffer, size, "%"PRId16, value->data.int16_val);
+        len = snprintf(buffer, size, "%" PRId16, value->data.int16_val);
         break;
     case SR_INT32_T:
-        len = snprintf(buffer, size, "%"PRId32, value->data.int32_val);
+        len = snprintf(buffer, size, "%" PRId32, value->data.int32_val);
         break;
     case SR_INT64_T:
-        len = snprintf(buffer, size, "%"PRId64, value->data.int64_val);
+        len = snprintf(buffer, size, "%" PRId64, value->data.int64_val);
         break;
     case SR_STRING_T:
         if (NULL != value->data.string_val) {
@@ -810,16 +886,16 @@ sr_val_to_buff(const sr_val_t *value, char buffer[], size_t size)
         }
         break;
     case SR_UINT8_T:
-        len = snprintf(buffer, size, "%"PRIu8, value->data.uint8_val);
+        len = snprintf(buffer, size, "%" PRIu8, value->data.uint8_val);
         break;
     case SR_UINT16_T:
-        len = snprintf(buffer, size, "%"PRIu16, value->data.uint16_val);
+        len = snprintf(buffer, size, "%" PRIu16, value->data.uint16_val);
         break;
     case SR_UINT32_T:
-        len = snprintf(buffer, size, "%"PRIu32, value->data.uint32_val);
+        len = snprintf(buffer, size, "%" PRIu32, value->data.uint32_val);
         break;
     case SR_UINT64_T:
-        len = snprintf(buffer, size, "%"PRIu64, value->data.uint64_val);
+        len = snprintf(buffer, size, "%" PRIu64, value->data.uint64_val);
         break;
     case SR_ANYXML_T:
         if (NULL != value->data.anyxml_val) {
@@ -844,21 +920,19 @@ sr_tree_to_val(const struct lyd_node *data, const char *path, sr_val_t **value)
     sr_error_info_t *err_info = NULL;
     struct ly_set *set = NULL;
 
-    SR_CHECK_ARG_APIRET(!data || !path || !value, NULL, err_info)
+    SR_CHECK_ARG_APIRET(!data || (data->schema->nodetype & (LYS_RPC | LYS_ACTION)) || !path || !value, NULL, err_info);
 
     *value = NULL;
 
-    set = lyd_find_path(data, path);
-
-    if (!set) {
-        sr_errinfo_new_ly(&err_info, lyd_node_module(data)->ctx);
+    if (lyd_find_xpath(data, path, &set)) {
+        sr_errinfo_new_ly(&err_info, LYD_CTX(data), NULL);
         goto cleanup;
-    } else if (!set->number) {
+    } else if (!set->count) {
         /* Not building err_info to avoid error logs when no item found */
-        ly_set_free(set);
+        ly_set_free(set, NULL);
         return SR_ERR_NOT_FOUND;
-    } else if (set->number > 1) {
-        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, NULL, "More subtrees match \"%s\".", path);
+    } else if (set->count > 1) {
+        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "More subtrees match \"%s\".", path);
         goto cleanup;
     }
 
@@ -866,13 +940,13 @@ sr_tree_to_val(const struct lyd_node *data, const char *path, sr_val_t **value)
     *value = malloc(sizeof **value);
     SR_CHECK_MEM_GOTO(!*value, err_info, cleanup);
 
-    if ((err_info = sr_val_ly2sr(set->set.d[0], *value))) {
+    if ((err_info = sr_val_ly2sr(set->dnodes[0], *value))) {
         goto cleanup;
     }
 
     /* success */
 cleanup:
-    ly_set_free(set);
+    ly_set_free(set, NULL);
     return sr_api_ret(NULL, err_info);
 }
 
@@ -888,21 +962,23 @@ sr_tree_to_values(const struct lyd_node *data, const char *xpath, sr_val_t **val
     *values = NULL;
     *value_cnt = 0;
 
-    set = lyd_find_path(data, xpath);
-
-    if (!set) {
-        sr_errinfo_new_ly(&err_info, lyd_node_module(data)->ctx);
+    if (lyd_find_xpath(data, xpath, &set)) {
+        sr_errinfo_new_ly(&err_info, LYD_CTX(data), NULL);
         goto cleanup;
-    } else if (!set->number) {
+    } else if (!set->count) {
         /* Not building err_info to avoid error logs when no item found */
-        ly_set_free(set);
+        ly_set_free(set, NULL);
         return SR_ERR_NOT_FOUND;
     } else {
-        *values = calloc(set->number, sizeof **values);
+        *values = calloc(set->count, sizeof **values);
         SR_CHECK_MEM_GOTO(!*values, err_info, cleanup);
 
-        for (i = 0; i < set->number; ++i) {
-            if ((err_info = sr_val_ly2sr(set->set.d[i], (*values) + i))) {
+        for (i = 0; i < set->count; ++i) {
+            if (set->dnodes[i]->schema->nodetype & (LYS_RPC | LYS_ACTION)) {
+                continue;
+            }
+
+            if ((err_info = sr_val_ly2sr(set->dnodes[i], *values + *value_cnt))) {
                 goto cleanup;
             }
             ++(*value_cnt);
@@ -911,7 +987,7 @@ sr_tree_to_values(const struct lyd_node *data, const char *xpath, sr_val_t **val
 
     /* success */
 cleanup:
-    ly_set_free(set);
+    ly_set_free(set, NULL);
     if (err_info) {
         sr_free_values(*values, *value_cnt);
         *values = NULL;

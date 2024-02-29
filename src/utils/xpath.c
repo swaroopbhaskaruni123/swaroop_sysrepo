@@ -4,29 +4,28 @@
  * @brief Sysrepo xpath util functions.
  *
  * @copyright
- * Copyright 2019 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2021 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2021 CESNET, z.s.p.o.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *     https://opensource.org/licenses/BSD-3-Clause
  */
+
+#define _GNU_SOURCE
+
+#include "xpath.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "common.h"
-#include "xpath.h"
+#include "config.h"
 
 static char *
-sr_get_next_node_internal(char *xpath, sr_xpath_ctx_t *state, bool skip_namespace)
+sr_get_next_node_internal(char *xpath, sr_xpath_ctx_t *state, int skip_namespace)
 {
     char *index = NULL, *quot = NULL;
 
@@ -44,15 +43,15 @@ sr_get_next_node_internal(char *xpath, sr_xpath_ctx_t *state, bool skip_namespac
     }
 
     index = state->replaced_position;
-    if (state->replaced_char == '\'' || state->replaced_char == '\"') {
+    if ((state->replaced_char == '\'') || (state->replaced_char == '\"')) {
         index++;
     }
 
     while (*index != 0 && (quot != NULL || *index != '/')) {
-        if (quot != NULL && *index == *quot) {
+        if ((quot != NULL) && (*index == *quot)) {
             /* quote ended */
             quot = NULL;
-        } else if (quot == NULL && (*index == '\'' || *index == '\"')) {
+        } else if ((quot == NULL) && ((*index == '\'') || (*index == '\"'))) {
             quot = index;
         }
         index++;
@@ -71,7 +70,7 @@ sr_get_next_node_internal(char *xpath, sr_xpath_ctx_t *state, bool skip_namespac
     }
 
     if (*index == ':') {
-        if (skip_namespace){
+        if (skip_namespace) {
             /* skip namespace */
             state->current_node = index + 1;
             index++;
@@ -93,13 +92,13 @@ sr_get_next_node_internal(char *xpath, sr_xpath_ctx_t *state, bool skip_namespac
 API char *
 sr_xpath_next_node(char *xpath, sr_xpath_ctx_t *state)
 {
-    return sr_get_next_node_internal(xpath, state, true);
+    return sr_get_next_node_internal(xpath, state, 1);
 }
 
 API char *
 sr_xpath_next_node_with_ns(char *xpath, sr_xpath_ctx_t *state)
 {
-    return sr_get_next_node_internal(xpath, state, false);
+    return sr_get_next_node_internal(xpath, state, 0);
 }
 
 API char *
@@ -121,21 +120,21 @@ sr_xpath_next_key_name(char *xpath, sr_xpath_ctx_t *state)
     }
 
     index = state->replaced_position;
-    if (state->replaced_char == '\'' || state->replaced_char == '\"') {
+    if ((state->replaced_char == '\'') || (state->replaced_char == '\"')) {
         index++;
     }
 
     while (*index != 0 && (quot != NULL || (*index != '[' && *index != '/'))) {
-        if (quot != NULL && *index == *quot) {
+        if ((quot != NULL) && (*index == *quot)) {
             /* quote ended */
             quot = NULL;
-        } else if (quot == NULL && (*index == '\'' || *index == '\"')) {
+        } else if ((quot == NULL) && ((*index == '\'') || (*index == '\"'))) {
             quot = index;
         }
         index++;
     }
 
-    if (*index == 0 || *index == '/') {
+    if ((*index == 0) || (*index == '/')) {
         /* end of input or end of node */
         return NULL;
     }
@@ -174,7 +173,7 @@ sr_xpath_next_key_value(char *xpath, sr_xpath_ctx_t *state)
     }
 
     index = state->replaced_position;
-    if (state->replaced_char == '\'' || state->replaced_char == '\"') {
+    if ((state->replaced_char == '\'') || (state->replaced_char == '\"')) {
         index++;
     }
 
@@ -182,7 +181,7 @@ sr_xpath_next_key_value(char *xpath, sr_xpath_ctx_t *state)
         index++;
     }
 
-    if (*index == 0 || *index == '/') {
+    if ((*index == 0) || (*index == '/')) {
         /* end of input or end of node */
         return NULL;
     }
@@ -207,7 +206,8 @@ API char *
 sr_xpath_node(char *xpath, const char *node_name, sr_xpath_ctx_t *state)
 {
     char *index = NULL;
-    if (NULL == state || NULL == node_name || (NULL == state->begining && NULL == xpath)) {
+
+    if ((NULL == state) || (NULL == node_name) || ((NULL == state->begining) && (NULL == xpath))) {
         return NULL;
     }
 
@@ -248,7 +248,8 @@ API char *
 sr_xpath_node_rel(char *xpath, const char *node_name, sr_xpath_ctx_t *state)
 {
     char *index = NULL;
-    if (NULL == state || NULL == node_name) {
+
+    if ((NULL == state) || (NULL == node_name)) {
         return NULL;
     }
 
@@ -282,11 +283,12 @@ sr_xpath_node_rel(char *xpath, const char *node_name, sr_xpath_ctx_t *state)
 }
 
 API char *
-sr_xpath_node_idx(char* xpath, size_t index, sr_xpath_ctx_t* state)
+sr_xpath_node_idx(char *xpath, size_t index, sr_xpath_ctx_t *state)
 {
     char *node = NULL;
     size_t cnt = 0;
-    if (NULL == state || (NULL == state->begining && NULL == xpath)) {
+
+    if ((NULL == state) || ((NULL == state->begining) && (NULL == xpath))) {
         return NULL;
     }
 
@@ -307,7 +309,7 @@ sr_xpath_node_idx(char* xpath, size_t index, sr_xpath_ctx_t* state)
     state->replaced_position = state->begining;
     state->replaced_char = *state->begining;
 
-    while (NULL != (node = sr_xpath_next_node(NULL, state)) && cnt++ < index);
+    while (NULL != (node = sr_xpath_next_node(NULL, state)) && cnt++ < index) {}
 
     if (NULL == node) {
         /* restore state in case of unsuccessful search */
@@ -319,10 +321,11 @@ sr_xpath_node_idx(char* xpath, size_t index, sr_xpath_ctx_t* state)
 }
 
 API char *
-sr_xpath_node_idx_rel(char* xpath, size_t index, sr_xpath_ctx_t* state)
+sr_xpath_node_idx_rel(char *xpath, size_t index, sr_xpath_ctx_t *state)
 {
     char *node = NULL;
     size_t cnt = 0;
+
     if (NULL == state) {
         return NULL;
     }
@@ -339,7 +342,7 @@ sr_xpath_node_idx_rel(char* xpath, size_t index, sr_xpath_ctx_t* state)
     char *old_pos = state->replaced_position;
     char old_char = state->replaced_char;
 
-    while (NULL != (node = sr_xpath_next_node(NULL, state)) && cnt++ < index);
+    while (NULL != (node = sr_xpath_next_node(NULL, state)) && cnt++ < index) {}
 
     if (NULL == node) {
         /* restore state in case of unsuccessful search */
@@ -354,7 +357,8 @@ API char *
 sr_xpath_node_key_value(char *xpath, const char *key, sr_xpath_ctx_t *state)
 {
     char *index = NULL, *key_xp = NULL;
-    if (NULL == state || NULL == key) {
+
+    if ((NULL == state) || (NULL == key)) {
         return NULL;
     }
 
@@ -401,6 +405,7 @@ sr_xpath_node_key_value_idx(char *xpath, size_t index, sr_xpath_ctx_t *state)
 {
     char *res = NULL;
     size_t cnt = 0;
+
     if (NULL == state) {
         return NULL;
     }
@@ -428,7 +433,7 @@ sr_xpath_node_key_value_idx(char *xpath, size_t index, sr_xpath_ctx_t *state)
     state->replaced_position = state->current_node;
     state->replaced_char = *state->current_node;
 
-    while (NULL != (res = sr_xpath_next_key_name(NULL, state)) && cnt++ < index);
+    while (NULL != (res = sr_xpath_next_key_name(NULL, state)) && cnt++ < index) {}
 
     if (NULL == res) {
         state->replaced_position = old_pos;
@@ -443,6 +448,7 @@ API char *
 sr_xpath_key_value(char *xpath, const char *node_name, const char *key_name, sr_xpath_ctx_t *state)
 {
     char *res = NULL;
+
     if (NULL == state) {
         return NULL;
     }
@@ -480,6 +486,7 @@ API char *
 sr_xpath_key_value_idx(char *xpath, size_t node_index, size_t key_index, sr_xpath_ctx_t *state)
 {
     char *res = NULL;
+
     if (NULL == state) {
         return NULL;
     }
@@ -516,6 +523,7 @@ API char *
 sr_xpath_last_node(char *xpath, sr_xpath_ctx_t *state)
 {
     char *res = NULL;
+
     if (NULL == state) {
         return NULL;
     }
@@ -529,7 +537,7 @@ sr_xpath_last_node(char *xpath, sr_xpath_ctx_t *state)
         sr_xpath_recover(state);
     }
 
-    while (NULL != (res = sr_xpath_next_node(NULL, state)));
+    while (NULL != (res = sr_xpath_next_node(NULL, state))) {}
 
     return state->current_node;
 }
@@ -542,10 +550,10 @@ sr_xpath_node_name(const char *xpath)
     if (NULL != xpath) {
         res = xpath + strlen(xpath) - 1;
         while (res != xpath && (quot != NULL || *res != '/')) {
-            if (quot != NULL && *res == *quot) {
+            if ((quot != NULL) && (*res == *quot)) {
                 /* quote ended */
                 quot = NULL;
-            } else if (quot == NULL && (*res == '\'' || *res == '\"')) {
+            } else if ((quot == NULL) && ((*res == '\'') || (*res == '\"'))) {
                 quot = res;
             }
             --res;
@@ -560,17 +568,17 @@ sr_xpath_node_name(const char *xpath)
     return (char *)res;
 }
 
-API bool
+API int
 sr_xpath_node_name_eq(const char *xpath, const char *node_name)
 {
     char *xp_node_name = NULL;
 
     xp_node_name = sr_xpath_node_name(xpath);
 
-    if (NULL == xp_node_name || NULL == node_name) {
-        return false;
+    if ((NULL == xp_node_name) || (NULL == node_name)) {
+        return 0;
     } else {
-        return (0 == strcmp(xp_node_name, node_name));
+        return 0 == strcmp(xp_node_name, node_name);
     }
 }
 
@@ -578,8 +586,8 @@ API void
 sr_xpath_recover(sr_xpath_ctx_t *state)
 {
     if (NULL != state) {
-       if (NULL != state->replaced_position) {
-           *state->replaced_position = state->replaced_char;
-       }
+        if (NULL != state->replaced_position) {
+            *state->replaced_position = state->replaced_char;
+        }
     }
 }
